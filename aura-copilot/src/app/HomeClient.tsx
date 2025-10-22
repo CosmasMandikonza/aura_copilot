@@ -5,19 +5,17 @@ import { useState } from 'react'
 import AddressForm from './components/AddressForm'
 import StrategyList from './components/StrategyList'
 import AIAnalysis from './components/AIAnalysis'
-import Dashboard from './components/Dashboard'
 
 export default function HomeClient() {
-  const [addr, setAddr] = useState<string>('')
-
+  const [addr, setAddr] = useState('')
   return (
     <main>
       <AddressForm onAnalyze={setAddr} />
-      {/* optional: only render when we have a valid hex (AddressForm resolves ENS) */}
-      <AIAnalysis address={addr} />
+      {addr ? <AIAnalysis address={addr} /> : null}
       <StrategyList address={addr} />
     </main>
   )
 }
+
 
 
