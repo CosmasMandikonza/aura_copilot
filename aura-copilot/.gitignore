@@ -1,0 +1,22 @@
+# dependencies & build
+node_modules/
+.next/
+out/
+
+# env & local config
+.env
+.env.*.local
+.env.local
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# prisma local db
+prisma/dev.db
+prisma/*.db
+*.sqlite
+*.sqlite3
+
+# OS junk
+.DS_Store
+Thumbs.db

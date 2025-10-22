@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model CacheEntry {
+  id        String   @id @default(cuid())
+  kind      String
+  address   String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  // Indexes (Prisma uses model-level @@index, not @index on fields)
+  @@index([address, kind])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  address   String
+  title     String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([address])
+}
