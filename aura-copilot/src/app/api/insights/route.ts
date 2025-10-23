@@ -5,16 +5,7 @@ import { getBalances, getStrategies } from '@/lib/aura'
 import { CACHE_TTL_MS } from '@/lib/constants'
 import { splitStrategies } from '@/lib/normalize'
 import { opportunityScore, twelveMonthProfit } from '@/lib/scoring'
-
-// Minimal type that matches what splitStrategies() expects.
-// If you already export a type from '@/lib/aura' use that instead.
-type AuraStrategiesResponse = {
-  address?: string
-  portfolio?: unknown[]
-  strategies: any[]
-  cached?: boolean
-  version?: string
-}
+import type { AuraStrategiesResponse } from '@/lib/types' // <-- use your real type
 
 const isHex = (s: string) => /^0x[a-fA-F0-9]{40}$/.test(s)
 
@@ -26,7 +17,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
   }
 
-  // Cache helper (Prisma JSON cache table)
+  // Cache helper with fail-soft behavior
   async function getOrFetch<K extends 'balances' | 'strategies'>(
     kind: K,
     fetcher: (a: string) => Promise<any>
@@ -47,7 +38,7 @@ export async function GET(req: NextRequest) {
       }
       return data
     } catch {
-      // If the cache table or DB is missing, just fetch live and return (fail-soft).
+      // If DB/cache is unavailable, still try live fetch; if that fails too, return null
       return fetcher(address).catch(() => null)
     }
   }
@@ -57,21 +48,43 @@ export async function GET(req: NextRequest) {
     getOrFetch('strategies', getStrategies),
   ])
 
-  // ---- Make the shapes safe for downstream usage ----
+  // ---- Normalize balances for stats (never throw) ----
   const safeBalances: { portfolio?: any[] } =
     balancesRaw && typeof balancesRaw === 'object' ? balancesRaw : { portfolio: [] }
 
-  const safeStrategiesObj: AuraStrategiesResponse =
-    strategiesRaw && typeof strategiesRaw === 'object' && Array.isArray((strategiesRaw as any).strategies)
-      ? (strategiesRaw as AuraStrategiesResponse)
-      : {
-          // If upstream gave us an array or null, adapt into the object shape splitStrategies needs
-          address,
-          portfolio: [],
-          strategies: Array.isArray(strategiesRaw) ? (strategiesRaw as any[]) : [],
-          cached: false,
-          version: 'unknown',
-        }
+  // ---- Normalize strategies into the EXACT AuraStrategiesResponse your code expects ----
+  function normalizeStrategies(raw: any): AuraStrategiesResponse {
+    // If the upstream already looks correct, reuse its fields but enforce required ones
+    if (raw && typeof raw === 'object' && Array.isArray(raw.strategies)) {
+      return {
+        address: String(raw.address ?? address),                  // required
+        portfolio: Array.isArray(raw.portfolio) ? raw.portfolio : [],
+        strategies: raw.strategies,
+        cached: Boolean(raw.cached),
+        version: String(raw.version ?? 'unknown'),
+      }
+    }
+    // If upstream returned just an array, wrap it
+    if (Array.isArray(raw)) {
+      return {
+        address,                                                  // required
+        portfolio: [],
+        strategies: raw,
+        cached: false,
+        version: 'unknown',
+      }
+    }
+    // Total failure fallback
+    return {
+      address,                                                    // required
+      portfolio: [],
+      strategies: [],
+      cached: false,
+      version: 'unknown',
+    }
+  }
+
+  const safeStrategiesObj: AuraStrategiesResponse = normalizeStrategies(strategiesRaw)
 
   // Group strategies into sections (airdrop / doubledip / other)
   const split = splitStrategies(safeStrategiesObj)
@@ -117,5 +130,4 @@ export async function GET(req: NextRequest) {
     sections: ranked,
   })
 }
-
 
