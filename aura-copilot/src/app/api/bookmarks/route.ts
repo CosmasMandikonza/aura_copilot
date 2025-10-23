@@ -1,38 +1,31 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 
-type SaveBody = { address?: string; title?: string; payload?: any }
+const HAS_DB = !!process.env.DATABASE_URL;
 
 export async function GET() {
-  const rows = await prisma.bookmark.findMany({
-    orderBy: { createdAt: 'desc' },
-  })
-  return NextResponse.json(rows)
+  if (!HAS_DB) return NextResponse.json({ items: [] }, { status: 200 });
+  try {
+    const items = await prisma.bookmark.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    return NextResponse.json({ items }, { status: 200 });
+  } catch {
+    return NextResponse.json({ items: [] }, { status: 200 });
+  }
 }
 
-export async function POST(req: NextRequest) {
-  let body: SaveBody | null = null
+export async function POST(req: Request) {
+  if (!HAS_DB) return NextResponse.json({ ok: true }, { status: 200 });
   try {
-    body = (await req.json()) as SaveBody
+    const body = await req.json();
+    const { title, payload, address } = body || {};
+    if (!title || !payload) return NextResponse.json({ ok: false }, { status: 400 });
+    await prisma.bookmark.create({ data: { title, address: address || null, payload } });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch {
-    return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
+    return NextResponse.json({ ok: false }, { status: 200 });
   }
-
-  const address = (body?.address || '').toLowerCase()
-  const title = (body?.title || '').trim()
-  const payload = body?.payload
-
-  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return NextResponse.json({ error: 'address must be a 0x…40 hex string' }, { status: 400 })
-  }
-  if (!title) {
-    return NextResponse.json({ error: 'title is required' }, { status: 400 })
-  }
-  if (payload == null) {
-    return NextResponse.json({ error: 'payload is required' }, { status: 400 })
-  }
-
-  const saved = await prisma.bookmark.create({ data: { address, title, payload } })
-  return NextResponse.json(saved)
 }
 

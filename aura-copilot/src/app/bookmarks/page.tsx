@@ -1,26 +1,18 @@
-// src/app/bookmarks/page.tsx
 'use client'
 
 import useSWR from 'swr'
 import StrategyCard from '../components/StrategyCard'
 
-type Bookmark = {
-  id: string
-  title: string
-  address?: string | null
-  payload: any
-}
-
-type ApiResponse = { items: Bookmark[] }
-
-const fetcher = (u: string) => fetch(u).then((r) => r.json() as Promise<ApiResponse>)
+type BookmarksResponse = { items: Array<{ id: string; payload: any; address?: string | null }> }
 
 export default function BookmarksPage() {
-  const { data, isLoading, error } = useSWR<ApiResponse>('/api/bookmarks', fetcher)
+  const fetcher = (u: string) => fetch(u).then((r) => r.json() as Promise<BookmarksResponse>)
+  const { data, isLoading, error } = useSWR<BookmarksResponse>('/api/bookmarks', fetcher)
+
   const items = data?.items ?? []
 
   return (
-    <main className="max-w-7xl mx-auto px-4 py-10">
+    <main className="max-w-7xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-6 text-white">Watchlist</h1>
 
       {isLoading && <div className="text-slate-300">Loading…</div>}
@@ -31,15 +23,11 @@ export default function BookmarksPage() {
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {items.map((b) => (
-          <StrategyCard
-            key={b.id}
-            item={b.payload}
-            address={b.address ?? undefined}
-            // onSave omitted deliberately for watchlist
-          />
+          <StrategyCard key={b.id} item={b.payload} address={b.address ?? undefined} />
         ))}
       </div>
     </main>
   )
 }
+
 

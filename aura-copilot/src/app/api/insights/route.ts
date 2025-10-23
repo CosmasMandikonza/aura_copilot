@@ -1,133 +1,122 @@
-// src/app/api/insights/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { getBalances, getStrategies } from '@/lib/aura'
-import { CACHE_TTL_MS } from '@/lib/constants'
-import { splitStrategies } from '@/lib/normalize'
-import { opportunityScore, twelveMonthProfit } from '@/lib/scoring'
-import type { AuraStrategiesResponse } from '@/lib/types' // <-- use your real type
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { getBalances, getStrategies } from '@/lib/aura';
+import { splitStrategies } from '@/lib/normalize';
+import { opportunityScore, twelveMonthProfit } from '@/lib/scoring';
+import { demoBalances, demoStrategies } from '@/lib/demoData';
 
-const isHex = (s: string) => /^0x[a-fA-F0-9]{40}$/.test(s)
+const TTL_MS = 30 * 60 * 1000;
+const DEMO_MODE = (process.env.DEMO_MODE || '').toLowerCase() === 'true';
+const isHex = (s: string) => /^0x[a-fA-F0-9]{40}$/.test(s);
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
-  const address = (searchParams.get('address') || '').toLowerCase()
+  const url = new URL(req.url);
+  const address = (url.searchParams.get('address') || '').toLowerCase();
+  const refresh = url.searchParams.get('refresh') === '1';
+  if (!isHex(address)) return NextResponse.json({ error: 'Invalid address' }, { status: 400 });
 
-  if (!isHex(address)) {
-    return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
+  async function readCache(kind: 'balances' | 'strategies') {
+    const row = await prisma.cacheEntry.findFirst({
+      where: { address, kind },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!row) return null;
+    const fresh = Date.now() - +new Date(row.createdAt) < TTL_MS;
+    return { fresh, payload: row.payload } as const;
   }
 
-  // Cache helper with fail-soft behavior
-  async function getOrFetch<K extends 'balances' | 'strategies'>(
-    kind: K,
-    fetcher: (a: string) => Promise<any>
-  ) {
+  async function writeCache(kind: 'balances' | 'strategies', payload: any) {
     try {
-      const cached = await prisma.cacheEntry.findFirst({
-        where: { address, kind },
-        orderBy: { createdAt: 'desc' },
-      })
-
-      if (cached && Date.now() - new Date(cached.createdAt).getTime() < CACHE_TTL_MS) {
-        return cached.payload
-      }
-
-      const data = await fetcher(address).catch(() => null)
-      if (data) {
-        await prisma.cacheEntry.create({ data: { address, kind, payload: data } })
-      }
-      return data
-    } catch {
-      // If DB/cache is unavailable, still try live fetch; if that fails too, return null
-      return fetcher(address).catch(() => null)
-    }
+      await prisma.cacheEntry.create({ data: { address, kind, payload } });
+    } catch { /* ignore */ }
   }
 
-  const [balancesRaw, strategiesRaw] = await Promise.all([
-    getOrFetch('balances', getBalances),
-    getOrFetch('strategies', getStrategies),
-  ])
+  async function load(kind: 'balances'|'strategies') {
+    // 1) optional cache read
+    const cached = refresh ? null : await readCache(kind);
+    if (cached?.fresh && cached.payload) return { source: 'cache', data: cached.payload };
 
-  // ---- Normalize balances for stats (never throw) ----
-  const safeBalances: { portfolio?: any[] } =
-    balancesRaw && typeof balancesRaw === 'object' ? balancesRaw : { portfolio: [] }
+    // 2) upstream fetch
+    const upstream = kind === 'balances' ? await getBalances(address) : await getStrategies(address);
 
-  // ---- Normalize strategies into the EXACT AuraStrategiesResponse your code expects ----
-  function normalizeStrategies(raw: any): AuraStrategiesResponse {
-    // If the upstream already looks correct, reuse its fields but enforce required ones
-    if (raw && typeof raw === 'object' && Array.isArray(raw.strategies)) {
-      return {
-        address: String(raw.address ?? address),                  // required
-        portfolio: Array.isArray(raw.portfolio) ? raw.portfolio : [],
-        strategies: raw.strategies,
-        cached: Boolean(raw.cached),
-        version: String(raw.version ?? 'unknown'),
-      }
+    // 3) success → write & return;  failure → fallback to prior cache or demo (if enabled)
+    if (upstream.ok && upstream.data) {
+      await writeCache(kind, upstream.data);
+      return { source: 'upstream', data: upstream.data };
     }
-    // If upstream returned just an array, wrap it
-    if (Array.isArray(raw)) {
-      return {
-        address,                                                  // required
-        portfolio: [],
-        strategies: raw,
-        cached: false,
-        version: 'unknown',
-      }
+
+    if (cached?.payload) return { source: 'stale-cache', data: cached.payload };
+
+    if (DEMO_MODE) {
+      const demo = kind === 'balances' ? demoBalances : demoStrategies;
+      await writeCache(kind, demo);
+      return { source: 'demo', data: demo };
     }
-    // Total failure fallback
-    return {
-      address,                                                    // required
-      portfolio: [],
-      strategies: [],
-      cached: false,
-      version: 'unknown',
-    }
+
+    // guaranteed safe empty shapes so UI won’t crash
+    const empty = kind === 'balances'
+      ? { address, portfolio: [], cached: false, version: 'unknown' }
+      : { address, portfolio: [], strategies: [], cached: false, version: 'unknown' };
+    return { source: 'empty', data: empty };
   }
 
-  const safeStrategiesObj: AuraStrategiesResponse = normalizeStrategies(strategiesRaw)
+  const [B, S] = await Promise.all([load('balances'), load('strategies')]);
 
-  // Group strategies into sections (airdrop / doubledip / other)
-  const split = splitStrategies(safeStrategiesObj)
+  // normalize strategies object to expected shape
+  const split = splitStrategies({
+    address: S.data.address ?? address,
+    portfolio: S.data.portfolio ?? [],
+    strategies: Array.isArray(S.data.strategies) ? S.data.strategies : [],
+    cached: !!S.data.cached,
+    version: S.data.version ?? 'unknown',
+  });
 
-  // Rank + annotate (score & notional 12m profit)
   const annotate = (items: any[]) =>
     (items || [])
       .map((it) => {
-        const score = opportunityScore(it)
-        const apy = it?.actions?.[0]?.apy
-        const profit12m = twelveMonthProfit(5000, apy) // demo notional
-        return { ...it, score, profit12m }
+        const score = opportunityScore(it);
+        const apy = it.actions?.[0]?.apy;
+        const profit12m = twelveMonthProfit(5000, apy);
+        return { ...it, score, profit12m };
       })
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
-  const ranked = {
-    airdrop: annotate(split.airdrop),
-    doubledip: annotate(split.doubledip),
-    other: annotate(split.other),
-  }
-
-  // Portfolio stats for the dashboard
-  const networks = new Set<string>()
-  let tvlUSD = 0
-  for (const p of safeBalances.portfolio || []) {
-    const tokens = (p as any)?.tokens || []
-    for (const t of tokens) {
-      const chainName = (p as any)?.network?.name || (p as any)?.network?.chainId || 'unknown'
-      networks.add(String(chainName))
-      if (typeof t?.balanceUSD === 'number') tvlUSD += t.balanceUSD
+  // quick stats
+  const networks = new Set<string>();
+  let tvlUSD = 0;
+  for (const p of B.data?.portfolio ?? []) {
+    for (const t of p.tokens ?? []) {
+      networks.add(p.network?.name || p.network?.chainId || 'unknown');
+      if (typeof t.balanceUSD === 'number') tvlUSD += t.balanceUSD;
     }
   }
 
-  return NextResponse.json({
+  const resp = NextResponse.json({
     address,
     tvlUSD: Math.round(tvlUSD * 100) / 100,
     networkCount: networks.size,
     top: {
-      airdrop: ranked.airdrop.slice(0, 3),
-      doubledip: ranked.doubledip.slice(0, 3),
-      other: ranked.other.slice(0, 3),
+      airdrop: annotate(split.airdrop).slice(0, 3),
+      doubledip: annotate(split.doubledip).slice(0, 3),
+      other: annotate(split.other).slice(0, 3),
     },
-    sections: ranked,
-  })
+    sections: {
+      airdrop: annotate(split.airdrop),
+      doubledip: annotate(split.doubledip),
+      other: annotate(split.other),
+    },
+  });
+
+  // helpful headers for debugging during judging
+  resp.headers.set('x-aura-source-balances', B.source);
+  resp.headers.set('x-aura-source-strategies', S.source);
+  resp.headers.set('x-demo-mode', String(DEMO_MODE));
+  resp.headers.set('cache-control', 'no-store');
+
+  return resp;
 }
+
+
+
+
 

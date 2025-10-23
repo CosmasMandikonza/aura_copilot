@@ -1,58 +1,45 @@
 // src/lib/ai.ts
-import { safeClaudeMessage, messageToText } from './llm'
+import { anthropic, safeClaudeMessage, messageToText } from './llm'
 
-/**
- * High-level helper that formats a portfolio + strategies into an AI prompt.
- * Returns plain text for rendering (or a friendly message if AI is disabled).
- */
 export async function analyzePortfolioWithAI(
   address: string,
-  strategies: any,
-  balances: any
+  strategies: unknown,
+  balances: unknown
 ): Promise<string> {
-  const model =
-    process.env.CLAUDE_MODEL ||
-    process.env.ANTHROPIC_MODEL || // legacy var, just in case
-    'claude-3-5-haiku-20241022'
-
-  const system =
-    'You are a seasoned DeFi portfolio analyst. ' +
-    'Be concise, actionable, and prioritize safety. ' +
-    'If an opportunity seems risky, clearly say why and suggest safer alternatives.'
-
-  // Keep payload compact to avoid hitting token limits
-  const trimmed = {
-    address,
-    strategies: Array.isArray(strategies)
-      ? strategies.slice(0, 30) // top N for cost
-      : strategies?.strategies?.slice?.(0, 30) ?? [],
-    // extract a light-weight balances summary
-    balances: (balances?.portfolio || []).map((p: any) => ({
-      network: p?.network?.name || p?.network?.chainId || 'unknown',
-      tokens: (p?.tokens || [])
-        .slice(0, 10)
-        .map((t: any) => ({ symbol: t?.symbol, usd: t?.balanceUSD })),
-    })),
+  if (!process.env.ANTHROPIC_API_KEY) {
+    // AI disabled in this deployment — return an empty but valid string
+    return ''
   }
 
-  const user =
-    `Wallet: ${address}\n` +
-    `Objective: Identify top opportunities (airdrops, stacked yield, governance).\n` +
-    `Constraints: Prefer low risk, call out approvals/bridges, and give direct links when possible.\n\n` +
-    `Data (JSON):\n` +
-    '```json\n' +
-    JSON.stringify(trimmed, null, 2) +
-    '\n```'
+  const sys =
+    'You are a DeFi portfolio analyst. Be concise, actionable, and avoid hype. Output short paragraphs and bullet points.'
+  const user = `
+Address: ${address}
 
-  const resp = await safeClaudeMessage({
+Balances (truncated): ${JSON.stringify(balances).slice(0, 4000)}
+Strategies (truncated): ${JSON.stringify(strategies).slice(0, 4000)}
+
+Tasks:
+1) Top 3 opportunities worth trying now (with reasons)
+2) Key risks to consider (protocol, execution, or timing)
+3) Quick win suggestions (if nothing obvious)
+  `.trim()
+
+  const msgs = safeClaudeMessage(sys, user)
+  const model = process.env.CLAUDE_MODEL || 'claude-3-7-sonnet-20250219'
+
+  const res = await anthropic().messages.create({
     model,
-    system,
-    messages: [{ role: 'user', content: user }],
-    max_tokens: 900,
-    temperature: 0.4,
+    max_tokens: 600,
+    messages: msgs as any
   })
 
-  const text = messageToText(resp)
-  return text || 'AI analysis is unavailable right now.'
+  // Convert to plain text
+  const text =
+    (res.content as any[])
+      ?.map((b) => (b.type === 'text' ? b.text : ''))
+      ?.join('\n') ?? ''
+
+  return text
 }
 

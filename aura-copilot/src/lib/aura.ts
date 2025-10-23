@@ -1,31 +1,45 @@
-import 'server-only'
-import { z } from 'zod'
-import { AuraBalancesResponse, AuraStrategiesResponse } from './types'
+// src/lib/aura.ts
+const BASE = process.env.AURA_API_BASE || 'https://aura.adex.network/api';
+const API_KEY = process.env.AURA_API_KEY || ''; // optional
 
-const base = process.env.AURA_API_BASE!
-const key  = process.env.AURA_API_KEY || ''
+type FetchOk<T> = { ok: true; status: number; data: T };
+type FetchErr    = { ok: false; status: number; data: any };
+type FetchResp<T> = FetchOk<T> | FetchErr;
 
-const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/)
+async function fetchJson<T>(path: string, params: Record<string, string | number>) : Promise<FetchResp<T>> {
+  const url = new URL(path, BASE);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  if (API_KEY) url.searchParams.set('apiKey', API_KEY); // only if you set a key
 
-async function fetchJson<T>(url: string) {
-  const res = await fetch(url, {
-    headers: key ? { 'x-api-key': key } : {},
-  })
-  if (!res.ok) {
-    const txt = await res.text()
-    throw new Error(`AURA fetch failed: ${res.status} ${txt}`)
-  }
-  return res.json() as Promise<T>
+  const res = await fetch(url.toString(), { cache: 'no-store' });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) return { ok: false, status: res.status, data };
+  return { ok: true, status: res.status, data };
 }
 
-export async function getBalances(address: string) {
-  addressSchema.parse(address)
-  const url = `${base}/portfolio/balances?address=${address}`
-  return fetchJson<AuraBalancesResponse>(url)
+export interface AuraBalancesResponse {
+  address?: string;
+  portfolio?: Array<{
+    network?: { name?: string; chainId?: string };
+    tokens?: Array<{ balanceUSD?: number }>;
+  }>;
+  cached?: boolean;
+  version?: string;
 }
 
-export async function getStrategies(address: string) {
-  addressSchema.parse(address)
-  const url = `${base}/portfolio/strategies?address=${address}`
-  return fetchJson<AuraStrategiesResponse>(url)
+export interface AuraStrategiesResponse {
+  address?: string;
+  portfolio?: unknown;
+  strategies?: any[];
+  cached?: boolean;
+  version?: string;
 }
+
+export function getBalances(address: string) {
+  return fetchJson<AuraBalancesResponse>('/portfolio/balances', { address });
+}
+
+export function getStrategies(address: string) {
+  return fetchJson<AuraStrategiesResponse>('/portfolio/strategies', { address });
+}
+
