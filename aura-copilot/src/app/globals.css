@@ -50,14 +50,29 @@ body {
 .animation-delay-2000 { animation-delay: 2s; }
 .animation-delay-4000 { animation-delay: 4s; }
 
+/* --- Dark premium utilities --- */
 .glassmorphism {
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
 .gradient-text {
   background: linear-gradient(to right, #a855f7, #3b82f6);
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.strategy-card {
+  animation: slideIn .3s ease-out;
+  transition: transform .2s, box-shadow .2s;
+}
+.strategy-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.3);
 }
