@@ -1,6 +1,5 @@
 'use client'
 
-import Badge from './Badge'
 import { analyzeSecurityRisk } from '@/lib/security'
 import { generateExecutionLink } from '@/lib/execution'
 
@@ -9,101 +8,140 @@ export default function StrategyCard({
   onSave,
   address,
 }: {
-  item: any,
-  onSave: (title: string, payload: any) => void,
+  item: any
+  onSave?: (title: string, payload: any) => void
   address?: string
 }) {
-  const risk = (item?.risk || '').toLowerCase();
-  const tone = risk === 'low' ? 'success' : risk === 'medium' ? 'warn' : 'danger';
+  const risk = (item?.risk || '').toLowerCase()
+  const security = analyzeSecurityRisk(item)
+  const execLink = address ? generateExecutionLink(item, address) : null
 
-  const security = analyzeSecurityRisk(item);
-  const execLink = address ? generateExecutionLink(item, address) : null;
+  const riskBadge = (() => {
+    const m: Record<string, string> = {
+      low: 'bg-emerald-500/20 text-emerald-300',
+      moderate: 'bg-yellow-500/20 text-yellow-300',
+      medium: 'bg-yellow-500/20 text-yellow-300',
+      high: 'bg-rose-500/20 text-rose-300',
+      opportunistic: 'bg-orange-500/20 text-orange-300',
+    }
+    return m[risk] || 'bg-slate-500/20 text-slate-300'
+  })()
+
+  const secBadge =
+    security.level === 'safe'
+      ? 'bg-emerald-500/20 text-emerald-300'
+      : security.level === 'caution'
+      ? 'bg-yellow-500/20 text-yellow-300'
+      : 'bg-rose-500/20 text-rose-300'
 
   return (
-    <div className="border rounded p-4 space-y-2 strategy-card">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="font-semibold">{item?.name || 'Strategy'}</h4>
-        <div className="flex items-center gap-2">
-          <Badge tone={tone}>{risk || 'unknown'}</Badge>
-
-          <span
-            className={
-              security.level === 'safe'
-                ? 'px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700'
-                : security.level === 'caution'
-                ? 'px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700'
-                : 'px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700'
-            }
-          >
-            🛡️ {security.score}/100
-          </span>
+    <div className="glassmorphism rounded-lg p-4 space-y-3 strategy-card">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <h4 className="font-semibold text-white truncate">
+            {item?.name || 'Strategy'}
+          </h4>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {item?.score != null && (
+              <span className="px-2 py-0.5 rounded text-xs bg-white/10 text-slate-200">
+                Score: {item.score}
+              </span>
+            )}
+            <span className={`px-2 py-0.5 rounded text-xs ${riskBadge}`}>{item?.risk}</span>
+            <span className={`px-2 py-0.5 rounded text-xs ${secBadge}`}>
+              🛡️ Security: {security.score}/100
+            </span>
+          </div>
         </div>
-      </div>
-
-      {/* body */}
-      <ul className="list-disc ml-5 text-sm">
-        {(item?.actions || []).map((a: any, idx: number) => (
-          <li key={idx}>
-            {a.tokens ? (
-              <div className="font-medium">
-                Tokens: {Array.isArray(a.tokens) ? a.tokens.join(', ') : a.tokens}
-              </div>
-            ) : null}
-            {a.description && <div>{a.description}</div>}
-
-            {Array.isArray(a.platforms) && a.platforms.length > 0 ? (
-              <div className="text-slate-600">
-                Platforms:{' '}
-                {a.platforms.map((p: { name: string; url: string }, i: number) => (
-                  <a key={i} href={p.url} target="_blank" className="underline mr-2">
-                    {p.name}
-                  </a>
-                ))}
-              </div>
-            ) : null}
-
-            {Array.isArray(a.networks) && a.networks.length > 0 && (
-              <div className="text-slate-600">Networks: {a.networks.join(', ')}</div>
-            )}
-            {Array.isArray(a.operations) && a.operations.length > 0 && (
-              <div className="text-slate-600">Operations: {a.operations.join(', ')}</div>
-            )}
-            {a.apy ? <div className="text-slate-600">APY: {a.apy}</div> : null}
-          </li>
-        ))}
-      </ul>
-
-      {/* security warnings */}
-      {security.warnings.length > 0 && (
-        <details className="text-xs text-orange-600 cursor-pointer">
-          <summary>⚠️ {security.warnings.length} security warning(s)</summary>
-          <ul className="list-disc ml-4 mt-1">
-            {security.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
-          </ul>
-        </details>
-      )}
-
-      <div className="flex gap-2 pt-1">
-        <button
-          onClick={() => onSave(item?.name || 'Strategy', item)}
-          className="px-3 py-1.5 rounded bg-slate-900 text-white text-sm"
-        >
-          Save to watchlist
-        </button>
 
         {execLink && (
           <a
             href={execLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-medium hover:opacity-90"
+            className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded text-sm font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
           >
-            ⚡ Execute →
+            ⚡ Execute
           </a>
         )}
       </div>
+
+      {/* Profit line (optional) */}
+      {item?.profit12m != null && (
+        <div className="text-xs text-slate-300">
+          12-mo Profit (on $5k): ${item.profit12m}
+        </div>
+      )}
+
+      {/* Actions list */}
+      <ul className="list-disc ml-5 text-sm space-y-2">
+        {item?.actions?.map((a: any, idx: number) => (
+          <li key={idx} className="space-y-1">
+            {a.tokens ? (
+              <div className="font-medium text-slate-100">
+                Tokens:{' '}
+                {Array.isArray(a.tokens) ? a.tokens.join(', ') : a.tokens}
+              </div>
+            ) : null}
+            {a.description && (
+              <div className="text-slate-200">{a.description}</div>
+            )}
+            {a.platforms?.length ? (
+              <div className="text-slate-300">
+                Platforms:{' '}
+                {a.platforms.map((p: any) => (
+                  <a
+                    key={p.url || p.name}
+                    href={p.url}
+                    target="_blank"
+                    className="underline mr-2"
+                  >
+                    {p.name}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+            {a.networks?.length ? (
+              <div className="text-slate-300">
+                Networks: {a.networks.join(', ')}
+              </div>
+            ) : null}
+            {a.operations?.length ? (
+              <div className="text-slate-300">
+                Operations: {a.operations.join(', ')}
+              </div>
+            ) : null}
+            {a.apy ? <div className="text-slate-300">APY: {a.apy}</div> : null}
+          </li>
+        ))}
+      </ul>
+
+      {/* Security warnings */}
+      {security.warnings.length > 0 && (
+        <details className="text-xs text-orange-300 cursor-pointer">
+          <summary>⚠️ {security.warnings.length} security warnings</summary>
+          <ul className="list-disc ml-5 mt-1 space-y-1">
+            {security.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {/* Save button (optional) */}
+      {onSave && (
+        <div className="pt-1">
+          <button
+            onClick={() => onSave(item?.name || 'Strategy', item)}
+            className="px-3 py-1.5 rounded bg-white/10 text-white text-sm hover:bg-white/20 transition-colors"
+          >
+            Save to watchlist
+          </button>
+        </div>
+      )}
     </div>
-  );
+  )
 }
 
 
