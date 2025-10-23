@@ -1,5 +1,4 @@
 'use client'
-
 import useSWR from 'swr'
 import { useState } from 'react'
 
@@ -13,53 +12,47 @@ export default function AIAnalysis({ address }: { address: string }) {
   if (!address) return null
 
   return (
-    <div className="relative">
-      <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-3xl blur opacity-20"></div>
-      <section className="relative glassmorphism rounded-3xl p-6 border-2 border-purple-500/20">
+    <section className="relative">
+      <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl blur opacity-20"></div>
+      <div className="relative glassmorphism rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-2xl shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-2xl">
               🤖
             </div>
             <div>
-              <h3 className="text-xl font-bold text-white">AI Portfolio Analysis</h3>
-              <p className="text-sm text-purple-200">
-                Real-time intelligence from your on-chain activity
-              </p>
+              <h3 className="font-bold text-lg text-white">AI Portfolio Analysis</h3>
+              <p className="text-xs text-purple-200">Powered by Claude</p>
             </div>
           </div>
           <button
             onClick={() => setExpanded((x) => !x)}
-            className="px-3 py-1.5 glassmorphism rounded-lg text-purple-300 hover:text-white transition-colors text-sm font-medium"
+            className="px-3 py-1.5 rounded bg-white/10 text-purple-300 text-sm hover:bg-white/20"
           >
-            {expanded ? '📉 Collapse' : '📈 Expand'}
+            {expanded ? 'Collapse' : 'Expand'}
           </button>
         </div>
 
         {isLoading && (
-          <div className="flex items-center gap-3 text-sm text-slate-300">
-            <div className="w-5 h-5 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+          <div className="flex items-center gap-2 text-sm text-slate-300">
+            <div className="animate-spin h-4 w-4 border-2 border-purple-500/50 border-t-transparent rounded-full" />
             AI analyzing your portfolio…
           </div>
         )}
 
         {error && (
-          <div className="glassmorphism rounded-xl p-4 border-red-500/40">
-            <p className="text-rose-300 text-sm">
-              ⚠️ AI analysis temporarily unavailable. Strategy data still available
-              below.
-            </p>
+          <div className="text-sm text-red-300">
+            AI analysis temporarily unavailable. Strategy data still available below.
           </div>
         )}
 
         {data?.analysis && (
-          <div className={`mt-2 ${!expanded ? 'line-clamp-3' : ''}`}>
-            <div className="whitespace-pre-wrap text-sm text-slate-200 bg-slate-900/40 rounded-xl p-4 border border-white/10">
-              {data.analysis}
-            </div>
+          <div className={`${!expanded ? 'line-clamp-4' : ''}`}>
+            <div className="whitespace-pre-wrap text-sm text-slate-200">{data.analysis}</div>
           </div>
         )}
-      </section>
-    </div>
+      </div>
+    </section>
   )
 }
+
