@@ -1,26 +1,31 @@
 'use client'
+
 import useSWR from 'swr'
+import StrategyCard from '../components/StrategyCard'
+
+const fetcher = (u: string) => fetch(u).then((r) => r.json())
 
 export default function BookmarksPage() {
-  const { data, error } = useSWR('/api/bookmarks', (u)=>fetch(u).then(r=>r.json()))
-  if (error) return <div>Failed to load</div>
-  if (!data) return <div>Loading…</div>
+  const { data } = useSWR('/api/bookmarks', fetcher, { refreshInterval: 0 })
+  const items: any[] = Array.isArray(data) ? data : []
 
   return (
-    <main className="max-w-3xl mx-auto">
-      <h1 className="text-xl font-bold mb-4">Watchlist</h1>
-      {data.length === 0 && <div>No bookmarks yet.</div>}
-      <div className="space-y-4">
-        {data.map((b:any)=>(
-          <div key={b.id} className="border rounded p-3">
-            <div className="text-sm text-slate-500">{b.address}</div>
-            <div className="font-semibold">{b.title}</div>
-            <pre className="text-xs mt-2 overflow-auto bg-slate-50 p-2 rounded">
-              {JSON.stringify(b.payload, null, 2)}
-            </pre>
-          </div>
+    <main className="max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6 text-white">Watchlist</h1>
+      {items.length === 0 && (
+        <div className="text-slate-300">No bookmarks yet.</div>
+      )}
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {items.map((b: any) => (
+          <StrategyCard
+            key={b.id || b.title}
+            item={b.payload || b}
+            address={b.address}
+          />
         ))}
       </div>
     </main>
   )
 }
+
